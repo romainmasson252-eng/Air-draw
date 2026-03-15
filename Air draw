@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>✍️ Air Draw</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a0f; --surface: #12121a; --border: #1e1e2e;
+    --accent: #7c3aed; --accent2: #06b6d4; --accent3: #f59e0b;
+    --text: #e2e8f0; --muted: #64748b; --success: #10b981; --danger: #ef4444;
+  }
+  body { background:var(--bg); color:var(--text); font-family:'Syne',sans-serif; height:100vh; display:flex; flex-direction:column; overflow:hidden; user-select:none; }
+  header { display:flex; align-items:center; justify-content:space-between; padding:10px 20px; background:var(--surface); border-bottom:1px solid var(--border); z-index:100; flex-shrink:0; }
+  .logo { font-size:1.1rem; font-weight:800; letter-spacing:-0.03em; display:flex; align-items:center; gap:8px; }
+  .logo span { color:var(--accent); }
+  .status-pill { font-family:'Space Mono',monospace; font-size:0.65rem; padding:4px 10px; border-radius:100px; border:1px solid var(--border); display:flex; align-items:center; gap:6px; transition:all 0.3s; }
+  .status-dot { width:7px; height:7px; border-radius:50%; background:var(--muted); transition:background 0.3s; }
+  .status-pill.active .status-dot { background:var(--success); box-shadow:0 0 8px var(--success); }
+  .status-pill.drawing .status-dot { background:var(--accent); box-shadow:0 0 8px var(--accent); }
+  .status-pill.loading .status-dot { background:var(--accent3); animation:pulse 0.8s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  @keyframes spin { to { transform:rotate(360deg) } }
+
+  main { flex:1; display:grid; grid-template-columns:265px 1fr; overflow:hidden; }
+  .sidebar { background:var(--surface); border-right:1px solid var(--border); padding:14px; display:flex; flex-direction:column; gap:15px; overflow-y:auto; flex-shrink:0; }
+  .sidebar::-webkit-scrollbar { width:4px; }
+  .sidebar::-webkit-scrollbar-track { background:transparent; }
+  .sidebar::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+  .section-label { font-size:0.6rem; font-family:'Space Mono',monospace; letter-spacing:0.15em; color:var(--muted); text-transform:uppercase; margin-bottom:6px; }
+
+  /* Camera */
+  .cam-wrap { position:relative; border-radius:10px; overflow:hidden; border:1px solid var(--border); aspect-ratio:4/3; background:#000; }
+  #video { width:100%; height:100%; object-fit:cover; transform:scaleX(-1); display:block; }
+  #overlayCanvas { position:absolute; inset:0; width:100%; height:100%; transform:scaleX(-1); }
+
+  /* Colors */
+  .colors { display:grid; grid-template-columns:repeat(5,1fr); gap:5px; }
+  .color-btn { aspect-ratio:1; border-radius:7px; border:2px solid transparent; cursor:pointer; transition:transform 0.15s,border-color 0.15s; position:relative; }
+  .color-btn:hover { transform:scale(1.12); }
+  .color-btn.selected { border-color:white; transform:scale(1.1); }
+  .color-btn.selected::after { content:'✓'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:0.65rem; color:white; text-shadow:0 1px 3px rgba(0,0,0,0.8); }
+
+  /* Brush */
+  .brush-sizes { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .size-btn { width:34px; height:34px; border-radius:8px; border:1px solid var(--border); background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background 0.15s,border-color 0.15s; }
+  .size-btn:hover { background:var(--border); }
+  .size-btn.selected { background:var(--accent); border-color:var(--accent); }
+  .size-dot { border-radius:50%; background:var(--text); pointer-events:none; }
+
+  /* Sliders */
+  .slider-wrap { display:flex; align-items:center; gap:10px; }
+  input[type=range] { flex:1; -webkit-appearance:none; height:4px; border-radius:2px; background:var(--border); outline:none; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:var(--accent); cursor:pointer; }
+  .slider-val { font-family:'Space Mono',monospace; font-size:0.65rem; color:var(--muted); min-width:32px; text-align:right; }
+
+  /* Buttons */
+  .action-btns { display:flex; flex-direction:column; gap:7px; }
+  .btn { padding:8px 12px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text); cursor:pointer; font-family:'Syne',sans-serif; font-size:0.76rem; font-weight:700; display:flex; align-items:center; gap:7px; transition:background 0.15s,border-color 0.15s; letter-spacing:0.02em; }
+  .btn:hover { background:var(--border); }
+  .btn.primary { background:var(--accent); border-color:var(--accent); }
+  .btn.primary:hover { background:#6d28d9; }
+  .btn.danger { border-color:var(--danger); color:var(--danger); }
+  .btn.danger:hover { background:rgba(239,68,68,0.1); }
+  .btn.sm { padding:6px 10px; font-size:0.7rem; }
+
+  /* Upload drop zone */
+  .drop-zone { border:2px dashed var(--border); border-radius:10px; padding:12px; text-align:center; cursor:pointer; transition:border-color 0.2s,background 0.2s; position:relative; }
+  .drop-zone:hover, .drop-zone.drag-over { border-color:var(--accent2); background:rgba(6,182,212,0.05); }
+  .drop-zone input { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+  .drop-zone-icon { font-size:1.5rem; margin-bottom:3px; pointer-events:none; }
+  .drop-zone-text { font-size:0.7rem; color:var(--muted); line-height:1.5; pointer-events:none; }
+
+  /* BG preview + controls */
+  #bgPreview { width:100%; border-radius:8px; object-fit:cover; max-height:80px; display:none; border:1px solid var(--border); }
+  .bg-btn-row { display:flex; gap:5px; flex-wrap:wrap; }
+  .bg-btn-row .btn { flex:1; min-width:0; justify-content:center; padding:5px 4px; font-size:0.65rem; }
+  .bg-btn-row .btn.active-fit { background:rgba(6,182,212,0.15); border-color:var(--accent2); color:var(--accent2); }
+
+  /* Zoom row */
+  .zoom-row { display:flex; align-items:center; gap:6px; }
+  .zoom-btn { width:28px; height:28px; border-radius:6px; border:1px solid var(--border); background:transparent; color:var(--text); cursor:pointer; font-size:1rem; line-height:1; display:flex; align-items:center; justify-content:center; transition:background 0.15s; flex-shrink:0; }
+  .zoom-btn:hover { background:var(--border); }
+  .zoom-label { font-family:'Space Mono',monospace; font-size:0.65rem; color:var(--muted); min-width:36px; text-align:center; }
+  .zoom-actions { display:flex; gap:6px; margin-top:7px; }
+  .zoom-actions .btn { flex:1; justify-content:center; padding:6px; font-size:0.7rem; }
+
+  /* Mode toggle */
+  .mode-btns { display:flex; border-radius:8px; border:1px solid var(--border); overflow:hidden; }
+  .mode-btn { flex:1; padding:7px; background:transparent; border:none; color:var(--muted); cursor:pointer; font-family:'Syne',sans-serif; font-size:0.72rem; font-weight:700; transition:all 0.15s; }
+  .mode-btn.active { background:var(--accent); color:white; }
+
+  .instructions { background:rgba(124,58,237,0.08); border:1px solid rgba(124,58,237,0.2); border-radius:10px; padding:11px; font-size:0.69rem; line-height:1.6; color:var(--muted); }
+  .instructions strong { color:var(--accent2); display:block; margin-bottom:5px; font-size:0.72rem; }
+
+  /* ── CANVAS ZONE ── */
+  .canvas-wrap { position:relative; overflow:hidden; background:#f0f2f5; }
+  .bg-dots { position:absolute; inset:0; background-image:radial-gradient(circle,#c8d0da 1px,transparent 1px); background-size:24px 24px; pointer-events:none; z-index:0; }
+  #bgCanvas, #drawCanvas, #cursorCanvas { position:absolute; inset:0; width:100%; height:100%; }
+  #bgCanvas   { pointer-events:none; z-index:1; }
+  #drawCanvas { pointer-events:none; z-index:2; }
+  #cursorCanvas { pointer-events:none; z-index:3; }
+  #interactCanvas { position:absolute; inset:0; width:100%; height:100%; z-index:4; cursor:none; }
+
+  #startOverlay { position:absolute; inset:0; background:rgba(10,10,15,0.88); backdrop-filter:blur(10px); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:50; gap:18px; text-align:center; }
+  .big-icon { font-size:3.5rem; }
+  .start-title { font-size:1.5rem; font-weight:800; }
+  .start-sub { color:var(--muted); font-size:0.83rem; max-width:300px; line-height:1.6; }
+
+  /* Hud overlays on canvas */
+  #zoomHud { position:absolute; top:14px; right:14px; background:rgba(10,10,15,0.7); backdrop-filter:blur(4px); border:1px solid var(--border); border-radius:8px; padding:5px 11px; font-family:'Space Mono',monospace; font-size:0.68rem; color:var(--text); opacity:0; transition:opacity 0.4s; pointer-events:none; z-index:5; }
+  #zoomHud.show { opacity:1; }
+  #panHud { position:absolute; bottom:14px; left:50%; transform:translateX(-50%); background:rgba(10,10,15,0.7); backdrop-filter:blur(4px); border:1px solid var(--border); border-radius:8px; padding:5px 14px; font-family:'Space Mono',monospace; font-size:0.64rem; color:var(--muted); opacity:0; transition:opacity 0.5s; pointer-events:none; z-index:5; white-space:nowrap; }
+  #panHud.show { opacity:1; }
+
+  #toast { position:fixed; bottom:20px; right:20px; background:var(--surface); border:1px solid var(--border); padding:9px 15px; border-radius:10px; font-size:0.75rem; font-family:'Space Mono',monospace; opacity:0; transform:translateY(10px); transition:all 0.3s; z-index:200; pointer-events:none; }
+  #toast.show { opacity:1; transform:translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">✍️ Air<span>Draw</span></div>
+  <div style="display:flex;gap:10px;align-items:center">
+    <div id="fpsCounter" style="font-family:'Space Mono',monospace;font-size:0.6rem;color:var(--muted)">-- fps</div>
+    <div id="zoomDisplay" style="font-family:'Space Mono',monospace;font-size:0.6rem;color:var(--muted)">100%</div>
+    <div class="status-pill" id="statusPill">
+      <div class="status-dot"></div>
+      <span id="statusText">Prêt</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="sidebar">
+
+    <div>
+      <div class="section-label">📷 Caméra</div>
+      <div class="cam-wrap">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlayCanvas"></canvas>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Mode dessin</div>
+      <div class="mode-btns">
+        <button class="mode-btn active" id="modeIndex" onclick="setMode('index')">☝️ Index</button>
+        <button class="mode-btn" id="modePinch" onclick="setMode('pinch')">🤌 Pince</button>
+      </div>
+    </div>
+
+    <!-- BG IMAGE -->
+    <div>
+      <div class="section-label">🖼️ Image de fond</div>
+      <div class="drop-zone" id="dropZone">
+        <input type="file" accept="image/*" id="bgFileInput">
+        <div class="drop-zone-icon">🖼️</div>
+        <div class="drop-zone-text">Glissez ou <strong style="color:var(--accent2)">cliquez</strong><br>pour choisir une image</div>
+      </div>
+      <img id="bgPreview" alt="fond">
+      <div id="bgControls" style="display:none;margin-top:8px">
+        <div class="section-label">Ajustement</div>
+        <div class="bg-btn-row">
+          <button class="btn sm active-fit" id="btnCover"    onclick="setBgFit('cover')">Remplir</button>
+          <button class="btn sm"            id="btnContain"  onclick="setBgFit('contain')">Contenir</button>
+          <button class="btn sm"            id="btnOriginal" onclick="setBgFit('original')">Origine</button>
+          <button class="btn sm danger"     onclick="removeBg()">✕</button>
+        </div>
+        <div style="margin-top:8px">
+          <div class="section-label">Opacité fond</div>
+          <div class="slider-wrap">
+            <input type="range" id="bgOpacitySlider" min="5" max="100" value="80">
+            <span class="slider-val" id="bgOpacityVal">80%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ZOOM -->
+    <div>
+      <div class="section-label">🔍 Zoom</div>
+      <div class="zoom-row">
+        <button class="zoom-btn" onclick="adjustZoom(-0.15)">−</button>
+        <input type="range" id="zoomSlider" min="10" max="800" value="100">
+        <button class="zoom-btn" onclick="adjustZoom(0.15)">+</button>
+        <span class="zoom-label" id="zoomLabel">100%</span>
+      </div>
+      <div class="zoom-actions">
+        <button class="btn" onclick="resetView()">🎯 Reset</button>
+        <button class="btn" onclick="fitToWindow()">⊡ Ajuster</button>
+      </div>
+      <div style="margin-top:6px;font-size:0.67rem;color:var(--muted);line-height:1.6">
+        🖱️ Molette = zoom centré souris<br>
+        Alt + glisser = déplacer vue
+      </div>
+    </div>
+
+    <!-- COLORS -->
+    <div>
+      <div class="section-label">🎨 Couleur</div>
+      <div class="colors" id="colorPalette"></div>
+    </div>
+
+    <!-- BRUSH -->
+    <div>
+      <div class="section-label">🖌️ Épaisseur</div>
+      <div class="brush-sizes" id="brushSizes"></div>
+    </div>
+
+    <!-- OPACITY -->
+    <div>
+      <div class="section-label">Opacité trait</div>
+      <div class="slider-wrap">
+        <input type="range" id="opacitySlider" min="10" max="100" value="100">
+        <span class="slider-val" id="opacityVal">100%</span>
+      </div>
+    </div>
+
+    <!-- SMOOTHING -->
+    <div>
+      <div class="section-label">Lissage</div>
+      <div class="slider-wrap">
+        <input type="range" id="smoothSlider" min="1" max="9" value="5">
+        <span class="slider-val" id="smoothVal">5</span>
+      </div>
+    </div>
+
+    <!-- ACTIONS -->
+    <div>
+      <div class="section-label">Actions</div>
+      <div class="action-btns">
+        <button class="btn primary" onclick="saveCanvas()">💾 Sauvegarder PNG</button>
+        <button class="btn" onclick="undoLast()">↩️ Annuler dernier trait</button>
+        <button class="btn danger" onclick="clearCanvas()">🗑️ Effacer tous les traits</button>
+      </div>
+    </div>
+
+    <div class="instructions">
+      <strong>⌨️ Raccourcis clavier</strong>
+      C — Effacer · Z — Annuler · S — Sauvegarder<br>
+      R — Reset vue · F — Ajuster à l'écran<br>
+      +/- — Taille du trait · 1-9 — Couleur<br>
+      Alt+glisser — Déplacer · Molette — Zoom
+    </div>
+  </div>
+
+  <!-- CANVAS AREA -->
+  <div class="canvas-wrap" id="canvasWrap">
+    <div class="bg-dots"></div>
+    <canvas id="bgCanvas"></canvas>
+    <canvas id="drawCanvas"></canvas>
+    <canvas id="cursorCanvas"></canvas>
+    <canvas id="interactCanvas"></canvas>
+    <div id="zoomHud">🔍 100%</div>
+    <div id="panHud">🖱️ Alt + glisser pour déplacer la vue</div>
+
+    <div id="startOverlay">
+      <div class="big-icon">✋</div>
+      <div class="start-title">Dessinez dans l'air</div>
+      <div class="start-sub">Activez la caméra pour détecter votre main et dessiner avec l'index</div>
+      <button class="btn primary" onclick="startCamera()" style="font-size:0.9rem;padding:12px 24px;margin-top:4px">
+        📷 Activer la caméra
+      </button>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js" crossorigin="anonymous"></script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+//  VIEWPORT  — all strokes stored in WORLD coordinates
+//  screen = world * zoom + pan
+// ═══════════════════════════════════════════════════════════════════
+const vp = { zoom:1, panX:0, panY:0, minZoom:0.05, maxZoom:10 };
+
+const w2s = (wx, wy) => ({ x: wx*vp.zoom + vp.panX, y: wy*vp.zoom + vp.panY });
+const s2w = (sx, sy) => ({ x: (sx-vp.panX)/vp.zoom, y: (sy-vp.panY)/vp.zoom });
+
+function zoomAt(factor, pivotX, pivotY) {
+  const nz = Math.min(vp.maxZoom, Math.max(vp.minZoom, vp.zoom * factor));
+  const r  = nz / vp.zoom;
+  vp.panX  = pivotX - r*(pivotX - vp.panX);
+  vp.panY  = pivotY - r*(pivotY - vp.panY);
+  vp.zoom  = nz;
+  syncZoomUI(); renderAll();
+}
+
+function adjustZoom(delta) {
+  const W = interactCanvas.width, H = interactCanvas.height;
+  zoomAt(1 + delta, W/2, H/2);
+}
+
+function resetView() {
+  vp.zoom=1; vp.panX=0; vp.panY=0;
+  syncZoomUI(); renderAll();
+}
+
+function fitToWindow() {
+  if (!bgImage) { resetView(); return; }
+  const W = interactCanvas.width, H = interactCanvas.height;
+  const scale = Math.min(W / bgImage.naturalWidth, H / bgImage.naturalHeight);
+  vp.zoom = scale;
+  vp.panX = (W - bgImage.naturalWidth  * scale) / 2;
+  vp.panY = (H - bgImage.naturalHeight * scale) / 2;
+  syncZoomUI(); renderAll();
+}
+
+function syncZoomUI() {
+  const pct = Math.round(vp.zoom * 100) + '%';
+  document.getElementById('zoomLabel').textContent   = pct;
+  document.getElementById('zoomDisplay').textContent = pct;
+  document.getElementById('zoomSlider').value = Math.round(vp.zoom * 100);
+  flashHud('zoomHud', '🔍 ' + pct);
+}
+
+let zoomHudTimer, panHudTimer;
+function flashHud(id, msg) {
+  const el = document.getElementById(id);
+  if (msg) el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(id === 'zoomHud' ? zoomHudTimer : panHudTimer);
+  const t = setTimeout(() => el.classList.remove('show'), 1400);
+  if (id === 'zoomHud') zoomHudTimer = t; else panHudTimer = t;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CANVASES
+// ═══════════════════════════════════════════════════════════════════
+const bgCanvas      = document.getElementById('bgCanvas');
+const drawCanvas    = document.getElementById('drawCanvas');
+const cursorCanvas  = document.getElementById('cursorCanvas');
+const interactCanvas= document.getElementById('interactCanvas');
+const overlayCanvas = document.getElementById('overlayCanvas');
+const video         = document.getElementById('video');
+const wrap          = document.getElementById('canvasWrap');
+
+const ctxBg   = bgCanvas.getContext('2d');
+const ctxDraw = drawCanvas.getContext('2d');
+const ctxCur  = cursorCanvas.getContext('2d');
+const ctxOvr  = overlayCanvas.getContext('2d');
+
+function resizeCanvases() {
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  [bgCanvas, drawCanvas, cursorCanvas, interactCanvas].forEach(c => { c.width=W; c.height=H; });
+  renderAll();
+}
+new ResizeObserver(resizeCanvases).observe(wrap);
+
+// ═══════════════════════════════════════════════════════════════════
+//  BACKGROUND IMAGE
+// ═══════════════════════════════════════════════════════════════════
+let bgImage = null, bgFit = 'cover', bgOpacity = 0.8;
+
+document.getElementById('bgFileInput').addEventListener('change', e => {
+  if (e.target.files[0]) loadBgFile(e.target.files[0]);
+});
+
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) loadBgFile(f);
+});
+
+function loadBgFile(file) {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    bgImage = img;
+    const prev = document.getElementById('bgPreview');
+    prev.src     = url;
+    prev.style.display = 'block';
+    document.getElementById('bgControls').style.display = 'block';
+    fitToWindow();
+    toast('🖼️ Image chargée !');
+  };
+  img.src = url;
+}
+
+function removeBg() {
+  bgImage = null;
+  document.getElementById('bgPreview').style.display = 'none';
+  document.getElementById('bgControls').style.display = 'none';
+  renderAll(); toast('Image de fond supprimée');
+}
+
+function setBgFit(fit) {
+  bgFit = fit;
+  ['Cover','Contain','Original'].forEach(f =>
+    document.getElementById('btn'+f).classList.remove('active-fit'));
+  document.getElementById('btn'+fit.charAt(0).toUpperCase()+fit.slice(1)).classList.add('active-fit');
+  renderAll();
+}
+
+document.getElementById('bgOpacitySlider').addEventListener('input', e => {
+  bgOpacity = e.target.value / 100;
+  document.getElementById('bgOpacityVal').textContent = e.target.value + '%';
+  renderBg();
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════════════════════════
+function renderAll() { renderBg(); renderStrokes(); }
+
+function renderBg() {
+  const W = bgCanvas.width, H = bgCanvas.height;
+  ctxBg.clearRect(0,0,W,H);
+  if (!bgImage) return;
+
+  ctxBg.save();
+  ctxBg.globalAlpha = bgOpacity;
+
+  const iw = bgImage.naturalWidth, ih = bgImage.naturalHeight;
+
+  if (bgFit === 'original') {
+    // Image drawn at (0,0) in world coords, native size
+    ctxBg.setTransform(vp.zoom, 0, 0, vp.zoom, vp.panX, vp.panY);
+    ctxBg.drawImage(bgImage, 0, 0);
+  } else if (bgFit === 'contain') {
+    // Fit inside world canvas (assume world = screen / zoom at zoom=1)
+    ctxBg.setTransform(vp.zoom, 0, 0, vp.zoom, vp.panX, vp.panY);
+    // world size = canvas pixel size / 1 (at zoom=1 world==screen)
+    const worldW = W / vp.zoom, worldH = H / vp.zoom;
+    const scale  = Math.min(worldW/iw, worldH/ih);
+    const ox = (worldW - iw*scale)/2, oy = (worldH - ih*scale)/2;
+    ctxBg.drawImage(bgImage, ox, oy, iw*scale, ih*scale);
+  } else {
+    // cover: fill screen regardless of zoom
+    // Draw directly in screen space
+    ctxBg.setTransform(1,0,0,1,0,0);
+    const scale = Math.max(W/iw, H/ih);
+    const ox = (W - iw*scale)/2, oy = (H - ih*scale)/2;
+    ctxBg.drawImage(bgImage, ox, oy, iw*scale, ih*scale);
+  }
+  ctxBg.restore();
+}
+
+function renderStrokes() {
+  const W = drawCanvas.width, H = drawCanvas.height;
+  ctxDraw.clearRect(0,0,W,H);
+  ctxDraw.save();
+  ctxDraw.setTransform(vp.zoom, 0, 0, vp.zoom, vp.panX, vp.panY);
+  state.strokes.forEach(s => paintStroke(s));
+  if (state.currentStroke.length) paintStroke(state.currentStroke);
+  ctxDraw.restore();
+}
+
+function paintStroke(stroke) {
+  stroke.forEach(seg => {
+    ctxDraw.beginPath();
+    ctxDraw.moveTo(seg.x1, seg.y1);
+    ctxDraw.lineTo(seg.x2, seg.y2);
+    ctxDraw.strokeStyle = hexToRgba(seg.color, seg.opacity);
+    ctxDraw.lineWidth   = seg.size;
+    ctxDraw.lineCap     = 'round';
+    ctxDraw.lineJoin    = 'round';
+    ctxDraw.stroke();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  PAN + ZOOM MOUSE/WHEEL
+// ═══════════════════════════════════════════════════════════════════
+let isPanning = false, panStart = null, isAltDown = false, isSpaceDown = false;
+
+interactCanvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = interactCanvas.getBoundingClientRect();
+  const px = e.clientX - rect.left, py = e.clientY - rect.top;
+  const step = e.ctrlKey ? 0.03 : 0.12;
+  zoomAt(e.deltaY < 0 ? 1+step : 1-step, px, py);
+}, { passive: false });
+
+interactCanvas.addEventListener('mousedown', e => {
+  if (e.altKey || isSpaceDown) {
+    isPanning = true;
+    panStart = { x: e.clientX - vp.panX, y: e.clientY - vp.panY };
+    interactCanvas.style.cursor = 'grabbing';
+    flashHud('panHud');
+  }
+});
+window.addEventListener('mousemove', e => {
+  if (!isPanning) return;
+  vp.panX = e.clientX - panStart.x;
+  vp.panY = e.clientY - panStart.y;
+  syncZoomUI(); renderAll();
+});
+window.addEventListener('mouseup', () => {
+  if (isPanning) { isPanning = false; interactCanvas.style.cursor = 'none'; }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space')   isSpaceDown = true;
+  if (e.code === 'AltLeft' || e.code === 'AltRight') isAltDown = true;
+});
+document.addEventListener('keyup', e => {
+  if (e.code === 'Space')   isSpaceDown = false;
+  if (e.code === 'AltLeft' || e.code === 'AltRight') isAltDown = false;
+});
+
+document.getElementById('zoomSlider').addEventListener('input', e => {
+  const target = e.target.value / 100;
+  const W = interactCanvas.width, H = interactCanvas.height;
+  const r = target / vp.zoom;
+  vp.panX = W/2 - r*(W/2 - vp.panX);
+  vp.panY = H/2 - r*(H/2 - vp.panY);
+  vp.zoom = target;
+  syncZoomUI(); renderAll();
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  DRAWING STATE
+// ═══════════════════════════════════════════════════════════════════
+const COLORS = [
+  '#1a1a2e','#7c3aed','#06b6d4','#10b981','#f59e0b',
+  '#ef4444','#ec4899','#f97316','#a3e635','#ffffff',
+  '#6366f1','#14b8a6','#84cc16','#fcd34d','#fb923c'
+];
+const SIZES  = [3,6,12,20,30];
+const LABELS = ['S','M','L','XL','XXL'];
+
+const state = {
+  color: COLORS[1], size: SIZES[1], opacity: 1,
+  mode: 'index', drawing: false, prevPoint: null,
+  smoothing: 5, strokes: [], currentStroke: [],
+  lastFrame: 0,
+};
+let fingerHistory = [];
+
+// ═══════════════════════════════════════════════════════════════════
+//  UI BUILD
+// ═══════════════════════════════════════════════════════════════════
+(function buildUI() {
+  const pal = document.getElementById('colorPalette');
+  COLORS.forEach((c, i) => {
+    const b = document.createElement('div');
+    b.className = 'color-btn' + (c === state.color ? ' selected' : '');
+    b.style.background = c;
+    if (c === '#1a1a2e') b.style.outline = '1px solid #555';
+    b.onclick = () => selectColor(c, b);
+    pal.appendChild(b);
+  });
+  const bw = document.getElementById('brushSizes');
+  SIZES.forEach((s, i) => {
+    const b = document.createElement('button');
+    b.className = 'size-btn' + (s === state.size ? ' selected' : '');
+    b.title = LABELS[i];
+    const d = document.createElement('div');
+    d.className = 'size-dot';
+    d.style.width = d.style.height = Math.max(3, Math.min(s,26)) + 'px';
+    b.appendChild(d); b.onclick = () => selectSize(s, b); bw.appendChild(b);
+  });
+  document.getElementById('opacitySlider').addEventListener('input', e => {
+    state.opacity = e.target.value / 100;
+    document.getElementById('opacityVal').textContent = e.target.value + '%';
+  });
+  document.getElementById('smoothSlider').addEventListener('input', e => {
+    state.smoothing = parseInt(e.target.value);
+    document.getElementById('smoothVal').textContent = e.target.value;
+  });
+})();
+
+function selectColor(c, btn) {
+  state.color = c;
+  document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+}
+function selectSize(s, btn) {
+  state.size = s;
+  document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+}
+function setMode(m) {
+  state.mode = m;
+  document.getElementById('modeIndex').classList.toggle('active', m==='index');
+  document.getElementById('modePinch').classList.toggle('active', m==='pinch');
+}
+function setStatus(txt, cls) {
+  document.getElementById('statusPill').className = 'status-pill ' + cls;
+  document.getElementById('statusText').textContent = txt;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CAMERA
+// ═══════════════════════════════════════════════════════════════════
+async function startCamera() {
+  setStatus('Chargement…','loading');
+  document.getElementById('startOverlay').innerHTML = `
+    <div class="big-icon" style="animation:spin 1s linear infinite">⚙️</div>
+    <div class="start-title">Initialisation…</div>
+    <div class="start-sub">Chargement de MediaPipe Hands</div>`;
+  try {
+    const hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}` });
+    hands.setOptions({ maxNumHands:1, modelComplexity:1, minDetectionConfidence:0.7, minTrackingConfidence:0.5 });
+    hands.onResults(onResults);
+    const cam = new Camera(video, {
+      onFrame: async () => { await hands.send({ image: video }); updateFPS(); },
+      width:640, height:480,
+    });
+    await cam.start();
+    video.addEventListener('loadedmetadata', () => {
+      overlayCanvas.width = video.videoWidth; overlayCanvas.height = video.videoHeight;
+    });
+    document.getElementById('startOverlay').style.display = 'none';
+    setStatus('En attente','active');
+    toast('✅ Caméra prête ! Montrez votre main.');
+  } catch(e) {
+    document.getElementById('startOverlay').innerHTML = `
+      <div class="big-icon">❌</div>
+      <div class="start-title">Erreur caméra</div>
+      <div class="start-sub">${e.message}</div>
+      <button class="btn primary" onclick="startCamera()">🔄 Réessayer</button>`;
+    setStatus('Erreur','');
+  }
+}
+
+function updateFPS() {
+  const now = performance.now(), d = now - state.lastFrame; state.lastFrame = now;
+  document.getElementById('fpsCounter').textContent = Math.round(1000/d) + ' fps';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  HAND RESULTS
+// ═══════════════════════════════════════════════════════════════════
+function onResults(results) {
+  ctxOvr.clearRect(0,0,overlayCanvas.width,overlayCanvas.height);
+  if (!results.multiHandLandmarks || !results.multiHandLandmarks.length) {
+    setStatus('Main non détectée','active'); endStroke(); drawCursor(null); return;
+  }
+  const lm = results.multiHandLandmarks[0];
+  drawConnectors(ctxOvr, lm, HAND_CONNECTIONS, { color:'rgba(124,58,237,0.45)', lineWidth:1.5 });
+  drawLandmarks(ctxOvr, lm, { color:'#7c3aed', fillColor:'rgba(124,58,237,0.3)', lineWidth:0.5, radius:3 });
+
+  const cW = interactCanvas.width, cH = interactCanvas.height;
+
+  // Raw screen position (mirrored)
+  const rawX = (1 - lm[8].x) * cW;
+  const rawY = lm[8].y * cH;
+
+  // Smooth
+  fingerHistory.push({ x:rawX, y:rawY });
+  if (fingerHistory.length > state.smoothing) fingerHistory.shift();
+  const sum = fingerHistory.reduce((a,p) => ({x:a.x+p.x,y:a.y+p.y}), {x:0,y:0});
+  const sx = sum.x / fingerHistory.length;
+  const sy = sum.y / fingerHistory.length;
+
+  // World point
+  const wp = s2w(sx, sy);
+
+  let shouldDraw = false;
+  if (state.mode === 'index') {
+    shouldDraw = lm[8].y < lm[6].y - 0.03
+              && lm[12].y > lm[10].y
+              && lm[16].y > lm[14].y
+              && lm[20].y > lm[18].y;
+  } else {
+    const dx = (lm[4].x - lm[8].x) * cW;
+    const dy = (lm[4].y - lm[8].y) * cH;
+    shouldDraw = Math.sqrt(dx*dx + dy*dy) < 40;
+  }
+  setStatus(shouldDraw ? 'Dessin ✏️' : 'En attente', shouldDraw ? 'drawing' : 'active');
+
+  drawCursor(sx, sy, shouldDraw);
+
+  if (shouldDraw) {
+    if (!state.drawing) { state.drawing=true; state.prevPoint=wp; state.currentStroke=[]; }
+    addSeg(wp);
+  } else {
+    endStroke();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  SEGMENT / STROKE
+// ═══════════════════════════════════════════════════════════════════
+function addSeg(wp) {
+  if (!state.prevPoint) { state.prevPoint=wp; return; }
+  const seg = { x1:state.prevPoint.x, y1:state.prevPoint.y, x2:wp.x, y2:wp.y,
+                color:state.color, size:state.size, opacity:state.opacity };
+  state.currentStroke.push(seg);
+  state.prevPoint = wp;
+
+  // Incremental draw
+  ctxDraw.save();
+  ctxDraw.setTransform(vp.zoom,0,0,vp.zoom,vp.panX,vp.panY);
+  ctxDraw.beginPath();
+  ctxDraw.moveTo(seg.x1,seg.y1);
+  ctxDraw.lineTo(seg.x2,seg.y2);
+  ctxDraw.strokeStyle = hexToRgba(seg.color,seg.opacity);
+  ctxDraw.lineWidth   = seg.size;
+  ctxDraw.lineCap     = 'round';
+  ctxDraw.lineJoin    = 'round';
+  ctxDraw.stroke();
+  ctxDraw.restore();
+}
+
+function endStroke() {
+  if (state.drawing && state.currentStroke.length)
+    state.strokes.push([...state.currentStroke]);
+  state.drawing=false; state.prevPoint=null; state.currentStroke=[];
+}
+
+function drawCursor(x, y, active) {
+  ctxCur.clearRect(0,0,cursorCanvas.width,cursorCanvas.height);
+  if (x==null) return;
+  const r = Math.max(state.size * vp.zoom / 2, 3);
+  ctxCur.beginPath();
+  ctxCur.arc(x,y,r+9,0,Math.PI*2);
+  ctxCur.strokeStyle = active ? 'rgba(124,58,237,0.85)' : 'rgba(50,50,50,0.35)';
+  ctxCur.lineWidth=2; ctxCur.stroke();
+  ctxCur.beginPath();
+  ctxCur.arc(x,y,r,0,Math.PI*2);
+  ctxCur.fillStyle = active ? hexToRgba(state.color,state.opacity) : 'rgba(0,0,0,0.15)';
+  ctxCur.fill();
+  const cr = r+9;
+  ctxCur.strokeStyle = active ? 'rgba(124,58,237,0.45)' : 'rgba(0,0,0,0.12)';
+  ctxCur.lineWidth=1;
+  ctxCur.beginPath();
+  ctxCur.moveTo(x-cr-7,y); ctxCur.lineTo(x-cr+1,y);
+  ctxCur.moveTo(x+cr-1,y); ctxCur.lineTo(x+cr+7,y);
+  ctxCur.moveTo(x,y-cr-7); ctxCur.lineTo(x,y-cr+1);
+  ctxCur.moveTo(x,y+cr-1); ctxCur.lineTo(x,y+cr+7);
+  ctxCur.stroke();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ACTIONS
+// ═══════════════════════════════════════════════════════════════════
+function clearCanvas() {
+  state.strokes=[]; state.currentStroke=[]; renderStrokes(); toast('🗑️ Traits effacés');
+}
+function undoLast() {
+  if (!state.strokes.length) { toast('Rien à annuler'); return; }
+  state.strokes.pop(); renderStrokes(); toast('↩️ Annulé');
+}
+function saveCanvas() {
+  const tmp = document.createElement('canvas');
+  tmp.width=drawCanvas.width; tmp.height=drawCanvas.height;
+  const t = tmp.getContext('2d');
+  t.fillStyle='#ffffff'; t.fillRect(0,0,tmp.width,tmp.height);
+  t.drawImage(bgCanvas,0,0);
+  t.drawImage(drawCanvas,0,0);
+  const a = document.createElement('a');
+  a.href = tmp.toDataURL('image/png');
+  a.download = 'airdraw-' + Date.now() + '.png';
+  a.click(); toast('💾 Sauvegardé !');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  KEYBOARD
+// ═══════════════════════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  const k = e.key;
+  if (k==='c'||k==='C') clearCanvas();
+  else if (k==='z'||k==='Z') undoLast();
+  else if (k==='s'||k==='S') saveCanvas();
+  else if (k==='r'||k==='R') resetView();
+  else if (k==='f'||k==='F') fitToWindow();
+  else if (k==='+'||k==='=') {
+    const i=SIZES.indexOf(state.size);
+    if (i<SIZES.length-1) selectSize(SIZES[i+1],document.querySelectorAll('.size-btn')[i+1]);
+  } else if (k==='-') {
+    const i=SIZES.indexOf(state.size);
+    if (i>0) selectSize(SIZES[i-1],document.querySelectorAll('.size-btn')[i-1]);
+  }
+  const n=parseInt(k);
+  if (n>=1&&n<=COLORS.length) {
+    const b=document.querySelectorAll('.color-btn')[n-1];
+    if(b) selectColor(COLORS[n-1],b);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════════════════
+function hexToRgba(hex, a) {
+  return `rgba(${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)},${a})`;
+}
+function toast(msg) {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._t);
+  t._t=setTimeout(()=>t.classList.remove('show'),2200);
+}
+</script>
+</body>
+</html>
